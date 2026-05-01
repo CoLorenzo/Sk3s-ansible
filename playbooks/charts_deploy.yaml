@@ -1,0 +1,28 @@
+- name: Deploy Docker charts on K3s Controllers
+  hosts: server
+  become: yes
+  tasks:
+    - name: Ensure that the directory for manifests exists
+      ansible.builtin.file:
+        path: /var/lib/rancher/k3s/server/manifests/
+        state: directory
+        mode: '0755'
+
+    - name: Create Namespaces from chart files
+      ansible.builtin.shell: |
+        NS=$(grep 'namespace:' {{ item }} | head -n1 | awk '{print $2}')
+        if [ ! -z "$NS" ]; then
+          /usr/local/bin/kubectl create namespace $NS --dry-run=client -o yaml | /usr/local/bin/kubectl apply -f -
+        fi
+      with_fileglob:
+        - "../files/charts/*.yaml"
+      register: ns_creation
+      changed_when: "'created' in ns_creation.stdout or 'configured' in ns_creation.stdout"
+
+    - name: Copy all charts from local files to nodes
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/var/lib/rancher/k3s/server/manifests/{{ item | basename }}"
+        mode: '0644'
+      with_fileglob:
+        - "../files/charts/*.yaml"

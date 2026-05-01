@@ -1,0 +1,17 @@
+- name: Deploy Docker images on K3s nodes
+  hosts: all
+  become: yes
+  tasks:
+    - name: Ensure that the directory for air-gapped images exists
+      file:
+        path: /var/lib/rancher/k3s/agent/images/
+        state: directory
+        mode: '0755'
+
+    - name: Copy all tar images from local files to nodes
+      copy:
+        src: "{{ item }}"
+        dest: "/var/lib/rancher/k3s/agent/images/{{ item | basename }}"
+        mode: '0644'
+      with_fileglob:
+        - "../files/docker-images/*.tar"

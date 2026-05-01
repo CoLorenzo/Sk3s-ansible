@@ -1,0 +1,16 @@
+- name: Remove image from k3s runtime (containerd)
+  hosts: all
+  become: yes
+  tasks:
+    - name: Delete the tar files from the images folder
+      file:
+        path: "/var/lib/rancher/k3s/agent/images/{{ item | basename }}"
+        state: absent
+      with_fileglob:
+        - "../files/docker-images/*.tar"
+
+    - name: Remove image from k3s runtime (containerd)
+      command: k3s crictl rmi "docker.io/library/{{ item | basename | regex_replace('\.tar$', '') }}:latest"
+      ignore_errors: yes
+      with_fileglob:
+        - "../files/docker-images/*.tar"

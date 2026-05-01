@@ -1,0 +1,29 @@
+---
+- name: Cleanup orphaned charts on K3s nodes
+  hosts: server
+  become: yes
+  vars:
+    local_charts: "{{ lookup('fileglob', '../files/charts/*.yaml', wantlist=True) | map('basename') | list }}"
+
+  tasks:
+    - name: List all yaml files in manifests directory
+      ansible.builtin.find:
+        paths: /var/lib/rancher/k3s/server/manifests/
+        patterns: "*.yaml,*.yml"
+      register: remote_files
+
+    - name: Remove orphaned manifests
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ remote_files.files }}"
+      when: 
+        - item.path | basename not in local_charts
+        - "'traefik' not in item.path"
+        - "'coredns' not in item.path"
+        - "'local-storage' not in item.path"
+        - "'metrics-server' not in item.path"
+
+    - name: Debug - Show what would be kept
+      ansible.builtin.debug:
+        msg: "Keeping: {{ local_charts }}"
