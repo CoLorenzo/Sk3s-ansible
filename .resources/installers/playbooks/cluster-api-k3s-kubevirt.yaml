@@ -1,12 +1,10 @@
 ---
-# Prerequisite: KubeVirt must already be installed.
-#   sk3s install kubevirt
-#
-# This playbook installs the full Cluster API stack wired to k3s + KubeVirt so
-# that adding a Machine automatically provisions a KubeVirt VM that joins the
-# workload cluster as a k3s node.
+# This playbook installs KubeVirt + CDI and the full Cluster API stack wired to
+# k3s + KubeVirt so that adding a Machine automatically provisions a KubeVirt VM
+# that joins the workload cluster as a k3s node.
 #
 # Component map:
+#   kubevirt + CDI            — VM hypervisor and disk image importer
 #   cert-manager              — TLS infra required by CAPI webhooks
 #   cluster-api-operator      — manages CAPI provider lifecycle via CRs
 #   CoreProvider              — CAPI core controllers
@@ -19,6 +17,62 @@
 #
 # Then add workers with:
 #   sk3s add-machine k3s-kubevirt 1
+
+- name: Install KubeVirt and CDI
+  hosts: server
+  become: true
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  pre_tasks:
+    - name: Install python3-pip
+      ansible.builtin.apt:
+        name: python3-pip
+        state: present
+    - name: Install kubernetes Python library
+      ansible.builtin.command: python3 -m pip install kubernetes --break-system-packages
+      changed_when: false
+  tasks:
+    - name: Apply KubeVirt operator
+      ansible.builtin.command: >
+        kubectl apply -f
+        https://github.com/kubevirt/kubevirt/releases/download/v1.3.0/kubevirt-operator.yaml
+      changed_when: false
+
+    - name: Apply KubeVirt CR
+      ansible.builtin.command: >
+        kubectl apply -f
+        https://github.com/kubevirt/kubevirt/releases/download/v1.3.0/kubevirt-cr.yaml
+      changed_when: false
+
+    - name: Apply CDI operator
+      ansible.builtin.command: >
+        kubectl apply -f
+        https://github.com/kubevirt/containerized-data-importer/releases/download/v1.59.0/cdi-operator.yaml
+      changed_when: false
+
+    - name: Apply CDI CR
+      ansible.builtin.command: >
+        kubectl apply -f
+        https://github.com/kubevirt/containerized-data-importer/releases/download/v1.59.0/cdi-cr.yaml
+      changed_when: false
+
+    - name: Wait for virt-operator to be available
+      ansible.builtin.command: >
+        kubectl rollout status deployment/virt-operator
+        -n kubevirt --timeout=300s
+      changed_when: false
+
+    - name: Wait for KubeVirt CR to be ready
+      ansible.builtin.command: >
+        kubectl wait kubevirt kubevirt
+        -n kubevirt --for=condition=Available --timeout=300s
+      changed_when: false
+
+    - name: Wait for CDI operator to be available
+      ansible.builtin.command: >
+        kubectl rollout status deployment/cdi-operator
+        -n cdi --timeout=300s
+      changed_when: false
 
 - name: Install cert-manager
   hosts: server
