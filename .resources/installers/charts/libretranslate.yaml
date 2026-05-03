@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: libretranslate
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: libretranslate
+  namespace: kube-system
+spec:
+  chart: libretranslate
+  version: 1.0.1
+  repo: https://libretranslate.github.io/helm-charts
+  targetNamespace: libretranslate
+  valuesContent: |
+    replicaCount: 1

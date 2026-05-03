@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: harbor
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: harbor
+  namespace: kube-system
+spec:
+  chart: harbor
+  version: 1.14.0
+  repo: https://helm.goharbor.io
+  targetNamespace: harbor
+  valuesContent: |
+    # set externalURL to your cluster's ingress hostname
+    externalURL: https://harbor.example.com
+    expose:
+      type: clusterIP

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgresql
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: postgresql
+  namespace: kube-system
+spec:
+  chart: postgresql
+  version: 14.3.3
+  repo: https://charts.bitnami.com/bitnami
+  targetNamespace: postgresql
+  valuesContent: |
+    primary:
+      persistence:
+        size: 8Gi

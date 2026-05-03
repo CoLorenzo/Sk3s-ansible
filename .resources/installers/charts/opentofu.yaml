@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tofu-system
+---
+# tofu-controller is the Kubernetes operator that runs OpenTofu plans/applies
+# as part of a GitOps workflow (Flux-based)
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: tofu-controller
+  namespace: kube-system
+spec:
+  chart: tofu-controller
+  version: 0.16.0
+  repo: https://flux-iac.github.io/tofu-controller
+  targetNamespace: tofu-system

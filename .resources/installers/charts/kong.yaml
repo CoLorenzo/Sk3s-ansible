@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kong
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: kong
+  namespace: kube-system
+spec:
+  chart: kong
+  version: 2.38.0
+  repo: https://charts.konghq.com
+  targetNamespace: kong
+  valuesContent: |
+    ingressController:
+      enabled: true

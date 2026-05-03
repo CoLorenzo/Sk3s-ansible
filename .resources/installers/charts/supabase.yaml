@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: supabase
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: supabase
+  namespace: kube-system
+spec:
+  chart: supabase
+  version: 0.1.0
+  repo: https://supabase.github.io/helm-charts
+  targetNamespace: supabase

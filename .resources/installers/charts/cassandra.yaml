@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cassandra
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: cassandra
+  namespace: kube-system
+spec:
+  chart: cassandra
+  version: 10.2.2
+  repo: https://charts.bitnami.com/bitnami
+  targetNamespace: cassandra
+  valuesContent: |
+    replicaCount: 1

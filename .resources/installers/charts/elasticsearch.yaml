@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: elasticsearch
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: elasticsearch
+  namespace: kube-system
+spec:
+  chart: elasticsearch
+  version: 8.5.1
+  repo: https://helm.elastic.co
+  targetNamespace: elasticsearch
+  valuesContent: |
+    replicas: 1
+    minimumMasterNodes: 1
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "512Mi"
+      limits:
+        memory: "1Gi"

@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grafana
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: grafana
+  namespace: kube-system
+spec:
+  chart: grafana
+  version: 7.3.7
+  repo: https://grafana.github.io/helm-charts
+  targetNamespace: grafana
+  valuesContent: |
+    persistence:
+      enabled: true

@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-system
+---
+# base must be deployed before istiod — it installs the CRDs istiod depends on
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: istio-base
+  namespace: kube-system
+spec:
+  chart: base
+  version: 1.24.2
+  repo: https://istio-release.storage.googleapis.com/charts
+  targetNamespace: istio-system
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: istiod
+  namespace: kube-system
+spec:
+  chart: istiod
+  version: 1.24.2
+  repo: https://istio-release.storage.googleapis.com/charts
+  targetNamespace: istio-system

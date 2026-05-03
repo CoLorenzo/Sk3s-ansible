@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubeflow
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: kubeflow
+  namespace: kube-system
+spec:
+  chart: kubeflow
+  version: 0.1.0
+  repo: https://charts.kubeflow.org
+  targetNamespace: kubeflow

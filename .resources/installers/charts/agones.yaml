@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agones-system
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: agones
+  namespace: kube-system
+spec:
+  chart: agones
+  version: 1.40.0
+  repo: https://agones.dev/chart/stable
+  targetNamespace: agones-system

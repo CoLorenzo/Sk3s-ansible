@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trino
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: trino
+  namespace: kube-system
+spec:
+  chart: trino
+  version: 0.28.0
+  repo: https://trinodb.github.io/charts
+  targetNamespace: trino
+  valuesContent: |
+    server:
+      workers: 2

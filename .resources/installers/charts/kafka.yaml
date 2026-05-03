@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: kafka
+  namespace: kube-system
+spec:
+  chart: kafka
+  version: 26.8.5
+  repo: https://charts.bitnami.com/bitnami
+  targetNamespace: kafka
+  valuesContent: |
+    replicaCount: 1

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mailserver
+---
+# docker-mailserver bundles Postfix + Dovecot, the standard containerised mail stack
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: docker-mailserver
+  namespace: kube-system
+spec:
+  chart: docker-mailserver
+  version: 4.0.0
+  repo: https://docker-mailserver.github.io/docker-mailserver-helm
+  targetNamespace: mailserver
+  valuesContent: |
+    persistence:
+      size: 10Gi

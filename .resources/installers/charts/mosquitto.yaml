@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mosquitto
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: mosquitto
+  namespace: kube-system
+spec:
+  chart: mosquitto
+  version: 4.8.2
+  repo: https://nicholaswilde.github.io/helm-charts
+  targetNamespace: mosquitto
+  valuesContent: |
+    persistence:
+      enabled: true

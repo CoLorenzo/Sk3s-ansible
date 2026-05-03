@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minio
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: minio
+  namespace: kube-system
+spec:
+  chart: minio
+  version: 5.2.0
+  repo: https://charts.min.io
+  targetNamespace: minio
+  valuesContent: |
+    mode: standalone
+    persistence:
+      size: 10Gi

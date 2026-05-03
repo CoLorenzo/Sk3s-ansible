@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: temporal
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: temporal
+  namespace: kube-system
+spec:
+  chart: temporal
+  version: 0.54.0
+  repo: https://temporalio.github.io/helm-charts
+  targetNamespace: temporal
+  valuesContent: |
+    server:
+      replicaCount: 1
+    cassandra:
+      config:
+        cluster_size: 1

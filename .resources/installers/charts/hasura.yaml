@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hasura
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: hasura
+  namespace: kube-system
+spec:
+  chart: graphql-engine
+  version: 0.1.0
+  repo: https://hasura.github.io/helm-charts
+  targetNamespace: hasura
+  valuesContent: |
+    image:
+      tag: v2.36.1

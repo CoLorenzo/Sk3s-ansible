@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: redpanda
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: redpanda
+  namespace: kube-system
+spec:
+  chart: redpanda
+  version: 5.7.0
+  repo: https://charts.redpanda.com
+  targetNamespace: redpanda
+  valuesContent: |
+    statefulset:
+      replicas: 1

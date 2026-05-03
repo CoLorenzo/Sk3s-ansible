@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tigera-operator
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: calico
+  namespace: kube-system
+spec:
+  chart: tigera-operator
+  version: v3.29.1
+  repo: https://docs.tigera.io/calico/charts
+  targetNamespace: tigera-operator

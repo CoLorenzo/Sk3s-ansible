@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ollama
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: ollama
+  namespace: kube-system
+spec:
+  chart: ollama
+  version: 0.47.0
+  repo: https://otwld.github.io/ollama-helm
+  targetNamespace: ollama
+  valuesContent: |
+    ollama:
+      models:
+        pull: []

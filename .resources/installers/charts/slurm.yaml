@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: slurm
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: slurm
+  namespace: kube-system
+spec:
+  chart: slurm
+  version: 0.8.0
+  repo: https://helm.slinky.io
+  targetNamespace: slurm
+  valuesContent: |
+    clusterName: sk3s
+    controller:
+      replicas: 1
+    worker:
+      replicas: 2
