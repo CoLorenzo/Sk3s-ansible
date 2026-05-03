@@ -1,0 +1,230 @@
+---
+# This playbook installs KubeVirt + CDI and the full Cluster API stack wired to
+# k3s + KubeVirt so that adding a Machine automatically provisions a KubeVirt VM
+# that joins the workload cluster as a k3s node.
+#
+# Component map:
+#   kubevirt + CDI            — VM hypervisor and disk image importer
+#   cert-manager              — TLS infra required by CAPI webhooks
+#   cluster-api-operator      — manages CAPI provider lifecycle via CRs
+#   CoreProvider              — CAPI core controllers
+#   BootstrapProvider (k3s)   — generates cloud-init that installs/joins k3s
+#   ControlPlaneProvider (k3s)— manages KThreesControlPlane objects
+#   InfrastructureProvider    — turns Machine objects into KubeVirt VMs
+#
+# After this playbook finishes, apply the cluster template:
+#   kubectl apply -f .resources/cluster-templates/k3s-kubevirt-cluster.yaml
+#
+# Then add workers with:
+#   sk3s add-machine k3s-kubevirt 1
+
+- name: Install KubeVirt and CDI
+  hosts: server
+  become: true
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  tasks:
+    - name: Create kubevirt namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: kubevirt
+
+    - name: Install kubevirt via HelmChart
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: helm.cattle.io/v1
+          kind: HelmChart
+          metadata:
+            name: kubevirt
+            namespace: kube-system
+          spec:
+            chart: kubevirt
+            version: v1.3.0
+            repo: https://kubevirt.github.io/kubevirt-charts
+            targetNamespace: kubevirt
+
+    - name: Create cdi namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: cdi
+
+    - name: Install CDI via HelmChart
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: helm.cattle.io/v1
+          kind: HelmChart
+          metadata:
+            name: cdi
+            namespace: kube-system
+          spec:
+            chart: cdi
+            version: v1.59.0
+            repo: https://kubevirt.github.io/kubevirt-charts
+            targetNamespace: cdi
+
+    - name: Wait for virt-operator to be available
+      ansible.builtin.command: >
+        kubectl rollout status deployment/virt-operator
+        -n kubevirt --timeout=300s
+      changed_when: false
+
+    - name: Wait for KubeVirt CR to be ready
+      ansible.builtin.command: >
+        kubectl wait kubevirt kubevirt
+        -n kubevirt --for=condition=Available --timeout=300s
+      changed_when: false
+
+    - name: Wait for CDI operator to be available
+      ansible.builtin.command: >
+        kubectl rollout status deployment/cdi-operator
+        -n cdi --timeout=300s
+      changed_when: false
+
+- name: Install cert-manager
+  hosts: server
+  become: true
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  tasks:
+    - name: Add cert-manager Helm repository
+      kubernetes.core.helm_repository:
+        name: jetstack
+        repo_url: https://charts.jetstack.io
+
+    - name: Install cert-manager
+      kubernetes.core.helm:
+        name: cert-manager
+        chart_ref: jetstack/cert-manager
+        release_namespace: cert-manager
+        create_namespace: true
+        values:
+          crds:
+            enabled: true
+        wait: true
+        timeout: 5m0s
+
+- name: Install cluster-api-operator
+  hosts: server
+  become: true
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  tasks:
+    - name: Add cluster-api-operator Helm repository
+      kubernetes.core.helm_repository:
+        name: capi-operator
+        repo_url: https://kubernetes-sigs.github.io/cluster-api-operator
+
+    - name: Install cluster-api-operator
+      kubernetes.core.helm:
+        name: capi-operator
+        chart_ref: capi-operator/cluster-api-operator
+        release_namespace: capi-operator-system
+        create_namespace: true
+        wait: true
+        timeout: 3m0s
+
+    - name: Wait for cluster-api-operator to be available
+      ansible.builtin.command: >
+        kubectl rollout status deployment/capi-operator-cluster-api-operator
+        -n capi-operator-system --timeout=120s
+      changed_when: false
+
+    - name: Wait for Provider CRDs to be established
+      ansible.builtin.command: >
+        kubectl wait --for=condition=Established
+        crd/coreproviders.operator.cluster.x-k8s.io
+        crd/bootstrapproviders.operator.cluster.x-k8s.io
+        crd/controlplaneproviders.operator.cluster.x-k8s.io
+        crd/infrastructureproviders.operator.cluster.x-k8s.io
+        --timeout=180s
+      changed_when: false
+
+- name: Configure CAPI providers
+  hosts: server
+  become: true
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  tasks:
+    - name: Create provider namespaces
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ item }}"
+      loop:
+        - capi-system
+        - capi-k3s-bootstrap-system
+        - capi-k3s-control-plane-system
+        - capk-system
+
+    - name: Install CAPI core provider
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: operator.cluster.x-k8s.io/v1alpha2
+          kind: CoreProvider
+          metadata:
+            name: cluster-api
+            namespace: capi-system
+          spec:
+            version: v1.7.3
+
+    - name: Install k3s bootstrap provider
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: operator.cluster.x-k8s.io/v1alpha2
+          kind: BootstrapProvider
+          metadata:
+            name: k3s
+            namespace: capi-k3s-bootstrap-system
+          spec:
+            version: v0.2.7
+            fetchConfig:
+              url: https://github.com/k3s-io/cluster-api-k3s/releases/download/v0.2.7/bootstrap-components.yaml
+
+    - name: Install k3s control-plane provider
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: operator.cluster.x-k8s.io/v1alpha2
+          kind: ControlPlaneProvider
+          metadata:
+            name: k3s
+            namespace: capi-k3s-control-plane-system
+          spec:
+            version: v0.2.7
+            fetchConfig:
+              url: https://github.com/k3s-io/cluster-api-k3s/releases/download/v0.2.7/control-plane-components.yaml
+
+    - name: Install KubeVirt infrastructure provider
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: operator.cluster.x-k8s.io/v1alpha2
+          kind: InfrastructureProvider
+          metadata:
+            name: kubevirt
+            namespace: capk-system
+          spec:
+            version: v0.1.9
+
+    - name: Wait for all providers to become ready
+      ansible.builtin.command: >
+        kubectl wait provider --all --all-namespaces
+        --for=condition=Ready --timeout=300s
+      changed_when: false
+      retries: 3
+      delay: 15
