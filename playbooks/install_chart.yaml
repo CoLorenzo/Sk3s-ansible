@@ -1,0 +1,15 @@
+- name: Install chart on K3s server
+  hosts: server
+  become: yes
+  tasks:
+    - name: Ensure manifest directory exists
+      ansible.builtin.file:
+        path: /var/lib/rancher/k3s/server/manifests/
+        state: directory
+        mode: '0755'
+
+    - name: Copy chart to k3s manifests
+      ansible.builtin.copy:
+        src: "{{ chart_file }}"
+        dest: "/var/lib/rancher/k3s/server/manifests/{{ chart_file | basename }}"
+        mode: '0644'

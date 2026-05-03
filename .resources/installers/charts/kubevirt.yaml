@@ -1,0 +1,34 @@
+# KubeVirt: runs virtual machines as pods inside k3s
+# CDI (Containerized Data Importer): manages VM disk images from container registries
+# Install order: KubeVirt first — CDI depends on it being ready
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubevirt
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: kubevirt
+  namespace: kube-system
+spec:
+  chart: kubevirt
+  version: v1.3.0
+  repo: https://kubevirt.github.io/kubevirt-charts
+  targetNamespace: kubevirt
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cdi
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: cdi
+  namespace: kube-system
+spec:
+  chart: cdi
+  version: v1.59.0
+  repo: https://kubevirt.github.io/kubevirt-charts
+  targetNamespace: cdi
