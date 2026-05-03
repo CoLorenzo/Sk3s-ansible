@@ -162,18 +162,13 @@
         path: "{{ k3s_server_env_file }}"
         regexp: "^K3S_TOKEN=\\s*(?!{{ token | default('') | regex_escape }}\\s*$)"
 
-    - name: Reload systemd daemon
-      when:
-        - not ansible_check_mode
-        - ansible_facts['service_mgr'] == 'systemd'
-      ansible.builtin.systemd:
-        daemon_reload: true
-
     - name: Enable and start K3s service
-      ansible.builtin.service:
+      when: not ansible_check_mode
+      ansible.builtin.systemd:
         name: k3s
         state: restarted
         enabled: true
+        daemon_reload: true
 
     - name: Pause to allow first server startup
       when: (groups[server_group] | length) > 1
