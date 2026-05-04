@@ -1,0 +1,70 @@
+---
+- name: Deploy k3s agent VirtualMachine
+  hosts: server
+  become: true
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  tasks:
+    - name: Read k3s join token
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: k3s_token_raw
+
+    - name: Apply agent VirtualMachine
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: kubevirt.io/v1
+          kind: VirtualMachine
+          metadata:
+            name: k3s-agent
+            namespace: default
+          spec:
+            runStrategy: Always
+            dataVolumeTemplates:
+              - metadata:
+                  name: k3s-agent-boot
+                spec:
+                  source:
+                    registry:
+                      url: docker://quay.io/containerdisks/debian:12
+                  storage:
+                    accessModes:
+                      - ReadWriteOnce
+                    resources:
+                      requests:
+                        storage: 10Gi
+            template:
+              metadata:
+                labels:
+                  kubevirt.io/vm: k3s-agent
+              spec:
+                domain:
+                  cpu:
+                    cores: 1
+                  memory:
+                    guest: 520Mi
+                  devices:
+                    disks:
+                      - name: boot
+                        disk:
+                          bus: virtio
+                      - name: cloudinit
+                        disk:
+                          bus: virtio
+                    interfaces:
+                      - name: default
+                        masquerade: {}
+                networks:
+                  - name: default
+                    pod: {}
+                volumes:
+                  - name: boot
+                    dataVolume:
+                      name: k3s-agent-boot
+                  - name: cloudinit
+                    cloudInitNoCloud:
+                      userData: |
+                        #cloud-config
+                        runcmd:
+                          - curl -sfL https://get.k3s.io | K3S_URL=https://{{ ansible_host }}:6443 K3S_TOKEN={{ k3s_token_raw.content | b64decode | trim }} sh -
