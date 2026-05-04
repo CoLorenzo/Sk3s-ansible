@@ -79,6 +79,11 @@
   become: true
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  pre_tasks:
+    - name: Install helm
+      ansible.builtin.shell: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      args:
+        creates: /usr/local/bin/helm
   tasks:
     - name: Add cert-manager Helm repository
       kubernetes.core.helm_repository:
@@ -175,9 +180,9 @@
             name: k3s
             namespace: capi-k3s-bootstrap-system
           spec:
-            version: v0.2.7
+            version: v0.3.1
             fetchConfig:
-              url: https://github.com/k3s-io/cluster-api-k3s/releases/download/v0.2.7/bootstrap-components.yaml
+              url: https://github.com/k3s-io/cluster-api-k3s/releases/download/v0.3.1/bootstrap-components.yaml
 
     - name: Install k3s control-plane provider
       kubernetes.core.k8s:
@@ -189,9 +194,9 @@
             name: k3s
             namespace: capi-k3s-control-plane-system
           spec:
-            version: v0.2.7
+            version: v0.3.1
             fetchConfig:
-              url: https://github.com/k3s-io/cluster-api-k3s/releases/download/v0.2.7/control-plane-components.yaml
+              url: https://github.com/k3s-io/cluster-api-k3s/releases/download/v0.3.1/control-plane-components.yaml
 
     - name: Install KubeVirt infrastructure provider
       kubernetes.core.k8s:
@@ -207,8 +212,13 @@
 
     - name: Wait for all providers to become ready
       ansible.builtin.command: >
-        kubectl wait provider --all --all-namespaces
+        kubectl wait {{ item }} --all --all-namespaces
         --for=condition=Ready --timeout=300s
       changed_when: false
+      loop:
+        - coreproviders
+        - bootstrapproviders
+        - controlplaneproviders
+        - infrastructureproviders
       retries: 3
       delay: 15
