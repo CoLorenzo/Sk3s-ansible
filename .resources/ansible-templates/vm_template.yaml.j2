@@ -1,0 +1,52 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstanceReplicaSet
+metadata:
+  name: "{{ vm_name }}"
+spec:
+  replicas: {{ vm_replicas | default(1) }}
+  selector:
+    matchLabels:
+      kubevirt.io/vmirs: "{{ vm_name }}"
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vmirs: "{{ vm_name }}"
+    spec:
+      {% if vm_affinity is defined %}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              {% for key, value in vm_affinity.items() %}
+              - key: {{ key }}
+                operator: In
+                values:
+                - "{{ value }}"
+              {% endfor %}
+      {% endif %}
+      domain:
+        machine: { type: "{{ vm_machine_type | default('q35') }}" }
+        cpu: { cores: {{ vm_vcpu | default(1) }} }
+        memory: { guest: "{{ vm_vram | default('1024Mi') }}" }
+        devices:
+          disks:
+            - name: containerdisk
+              disk: { bus: virtio }
+            - name: cloudinit
+              disk: { bus: virtio }
+          interfaces:
+            - name: default
+              masquerade: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: containerdisk
+          containerDisk: { image: "{{ vm_image }}" }
+        - name: cloudinit
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              runcmd:
+                - curl -sfL https://get.k3s.io | K3S_URL={{ k3s_server_url }} K3S_TOKEN={{ k3s_node_token }} sh -
