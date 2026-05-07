@@ -10,7 +10,6 @@ IMAGE="docker://quay.io/containerdisks/debian:12"
 ARCH="x86_64"
 GPU="no"
 AFFINITY=""
-OUTPUT=""
 
 usage() {
   echo "Usage: $0 [options]"
@@ -40,6 +39,8 @@ while getopts "n:c:m:r:i:a:g:f:o:h" opt; do
     *) usage ;;
   esac
 done
+
+OUTPUT="./playbooks/file/manifests/${NAME}.yaml"
 
 # --- Logica Dati Cluster ---
 SERVER_URL=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
