@@ -1,3 +1,4 @@
 - import_playbook: site.yml
+- import_playbook: manifests_deploy.yaml
 - import_playbook: image_deploy.yaml
 - import_playbook: charts_deploy.yaml
