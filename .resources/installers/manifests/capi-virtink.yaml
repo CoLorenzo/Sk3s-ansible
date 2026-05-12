@@ -42158,6 +42158,7 @@ webhooks:
     resources:
     - kubeadmcontrolplanetemplates
   sideEffects: None
+---
 apiVersion: v1
 kind: Namespace
 metadata:
