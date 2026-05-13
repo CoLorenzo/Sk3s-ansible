@@ -1,0 +1,406 @@
+- name: Deploy Cluster API with Virtink and k3s providers
+  hosts: server
+  become: yes
+
+  vars:
+    clusterctl_version: "v1.12.7"
+    # Cluster
+    cluster_name: "vm-cluster"
+    cluster_namespace: "default"
+    cluster_pod_cidr: "10.244.0.0/16"
+    # Kubernetes
+    k3s_version: "v1.31.12+k3s1"
+    # VM
+    vm_name: "vm1"
+    vm_cpu_sockets: 2
+    vm_memory: "1Gi"
+    vm_disk_size: "10Gi"
+    vm_kernel_image: "smartxworks/virtink-kernel-5.15.12"
+    vm_rootfs_image: "smartxworks/virtink-container-rootfs-ubuntu"
+    vm_worker_count: 1
+
+  tasks:
+
+    # -------------------------------------------------------
+    # 1. Installa clusterctl
+    # -------------------------------------------------------
+    - name: Install clusterctl
+      ansible.builtin.get_url:
+        url: "https://github.com/kubernetes-sigs/cluster-api/releases/download/{{ clusterctl_version }}/clusterctl-linux-amd64"
+        dest: /usr/local/bin/clusterctl
+        mode: '0755'
+        force: true
+
+    - name: Verify clusterctl version
+      ansible.builtin.command: clusterctl version
+      register: clusterctl_ver
+      changed_when: false
+
+    - name: Show clusterctl version
+      ansible.builtin.debug:
+        msg: "{{ clusterctl_ver.stdout }}"
+
+    # -------------------------------------------------------
+    # 2. Configura provider k3s e virtink per clusterctl
+    # -------------------------------------------------------
+    - name: Ensure clusterctl config directory exists
+      ansible.builtin.file:
+        path: "/root/.config/cluster-api"
+        state: directory
+        mode: '0755'
+
+    - name: Write clusterctl config with k3s and virtink providers
+      ansible.builtin.copy:
+        dest: "/root/.config/cluster-api/clusterctl.yaml"
+        mode: '0644'
+        content: |
+          providers:
+            - name: "k3s"
+              url: "https://github.com/k3s-io/cluster-api-k3s/releases/latest/bootstrap-components.yaml"
+              type: "BootstrapProvider"
+            - name: "k3s"
+              url: "https://github.com/k3s-io/cluster-api-k3s/releases/latest/control-plane-components.yaml"
+              type: "ControlPlaneProvider"
+            - name: "virtink"
+              url: "https://github.com/smartxworks/cluster-api-provider-virtink/releases/latest/infrastructure-components.yaml"
+              type: "InfrastructureProvider"
+
+    # -------------------------------------------------------
+    # 3. Installa cert-manager
+    # -------------------------------------------------------
+    - name: Apply cert-manager
+      ansible.builtin.command: >
+        kubectl apply -f
+        https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+      register: certmanager_apply
+      changed_when: "'created' in certmanager_apply.stdout"
+
+    - name: Wait for cert-manager to be ready
+      ansible.builtin.command: >
+        kubectl wait --for=condition=Available deployment --all
+        -n cert-manager --timeout=180s
+      changed_when: false
+
+    # -------------------------------------------------------
+    # 4. clusterctl init
+    # -------------------------------------------------------
+    - name: Run clusterctl init with virtink and k3s providers
+      ansible.builtin.command: >
+        clusterctl init
+        --infrastructure virtink
+        --bootstrap k3s
+        --control-plane k3s
+      register: clusterctl_init
+      changed_when: true
+      environment:
+        KUBECONFIG: /root/.kube/config
+
+    - name: Show clusterctl init output
+      ansible.builtin.debug:
+        msg: "{{ clusterctl_init.stdout_lines }}"
+
+    - name: Fix deprecated gcr.io/kubebuilder image in capch
+      ansible.builtin.command: >
+        kubectl patch deployment capch-controller-manager
+        -n capch-system
+        --type=json
+        -p='[{"op":"replace","path":"/spec/template/spec/containers/0/image","value":"registry.k8s.io/kubebuilder/kube-rbac-proxy:v0.15.0"}]'
+      changed_when: true
+      ignore_errors: true
+
+    - name: Wait for capch pods to be ready
+      ansible.builtin.command: >
+        kubectl wait --for=condition=Available deployment --all
+        -n capch-system --timeout=180s
+      changed_when: false
+
+    - name: Wait for k3s bootstrap pods to be ready
+      ansible.builtin.command: >
+        kubectl wait --for=condition=Available deployment --all
+        -n capi-k3s-bootstrap-system --timeout=180s
+      changed_when: false
+
+    - name: Wait for k3s control plane pods to be ready
+      ansible.builtin.command: >
+        kubectl wait --for=condition=Available deployment --all
+        -n capi-k3s-control-plane-system --timeout=180s
+      changed_when: false
+
+    # -------------------------------------------------------
+    # 5. Installa Virtink
+    # -------------------------------------------------------
+    - name: Apply Virtink
+      ansible.builtin.command: >
+        kubectl apply -f
+        https://github.com/smartxworks/virtink/releases/latest/download/virtink.yaml
+      register: virtink_apply
+      changed_when: "'created' in virtink_apply.stdout"
+
+    - name: Wait for Virtink to be ready
+      ansible.builtin.command: >
+        kubectl wait --for=condition=Available deployment
+        virt-controller -n virtink-system --timeout=180s
+      changed_when: false
+
+    # -------------------------------------------------------
+    # 6. Recupera token e IP del cluster host
+    # -------------------------------------------------------
+    - name: Get k3s server token
+      ansible.builtin.command: cat /var/lib/rancher/k3s/server/token
+      register: k3s_token
+      changed_when: false
+
+    - name: Get server IP
+      ansible.builtin.set_fact:
+        server_ip: "{{ ansible_host }}"
+        k3s_server_token: "{{ k3s_token.stdout }}"
+
+    # -------------------------------------------------------
+    # 7. Genera il manifest vm-cluster
+    # -------------------------------------------------------
+    - name: Generate vm-cluster manifest from template
+      ansible.builtin.copy:
+        dest: "/tmp/vm-cluster.yaml"
+        mode: '0644'
+        content: |
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: {{ cluster_name }}-token
+            namespace: {{ cluster_namespace }}
+            labels:
+              clusterctl.cluster.x-k8s.io/move: ""
+          stringData:
+            value: "{{ k3s_server_token }}"
+          ---
+          apiVersion: cluster.x-k8s.io/v1beta2
+          kind: Cluster
+          metadata:
+            name: {{ cluster_name }}
+            namespace: {{ cluster_namespace }}
+          spec:
+            clusterNetwork:
+              pods:
+                cidrBlocks:
+                  - {{ cluster_pod_cidr }}
+            infrastructureRef:
+              apiGroup: infrastructure.cluster.x-k8s.io
+              kind: VirtinkCluster
+              name: {{ cluster_name }}
+            controlPlaneRef:
+              apiGroup: controlplane.cluster.x-k8s.io
+              kind: KThreesControlPlane
+              name: {{ cluster_name }}-control-plane
+          ---
+          apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+          kind: VirtinkCluster
+          metadata:
+            name: {{ cluster_name }}
+            namespace: {{ cluster_namespace }}
+          spec:
+            controlPlaneEndpoint:
+              host: {{ server_ip }}
+              port: 6443
+          ---
+          apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+          kind: KThreesControlPlane
+          metadata:
+            name: {{ cluster_name }}-control-plane
+            namespace: {{ cluster_namespace }}
+          spec:
+            replicas: 0
+            version: {{ k3s_version }}
+            kthreesConfigSpec: {}
+            machineTemplate:
+              infrastructureRef:
+                apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+                kind: VirtinkMachineTemplate
+                name: {{ vm_name }}-template
+                namespace: {{ cluster_namespace }}
+          ---
+          apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+          kind: VirtinkMachineTemplate
+          metadata:
+            name: {{ vm_name }}-template
+            namespace: {{ cluster_namespace }}
+          spec:
+            template:
+              spec:
+                virtualMachineTemplate:
+                  spec:
+                    instance:
+                      memory:
+                        size: {{ vm_memory }}
+                      cpu:
+                        sockets: {{ vm_cpu_sockets }}
+                      kernel:
+                        image: {{ vm_kernel_image }}
+                        cmdline: "console=ttyS0 root=/dev/vda rw ds=nocloud"
+                      disks:
+                        - name: rootfs
+                      interfaces:
+                        - name: pod
+                    volumes:
+                      - name: rootfs
+                        containerRootfs:
+                          image: {{ vm_rootfs_image }}
+                          size: {{ vm_disk_size }}
+                    networks:
+                      - name: pod
+                        pod: {}
+          ---
+          apiVersion: cluster.x-k8s.io/v1beta2
+          kind: MachineDeployment
+          metadata:
+            name: {{ cluster_name }}-workers
+            namespace: {{ cluster_namespace }}
+          spec:
+            clusterName: {{ cluster_name }}
+            replicas: {{ vm_worker_count }}
+            selector:
+              matchLabels:
+                cluster.x-k8s.io/cluster-name: {{ cluster_name }}
+            template:
+              metadata:
+                labels:
+                  cluster.x-k8s.io/cluster-name: {{ cluster_name }}
+              spec:
+                clusterName: {{ cluster_name }}
+                version: {{ k3s_version }}
+                bootstrap:
+                  configRef:
+                    apiGroup: bootstrap.cluster.x-k8s.io
+                    kind: KThreesConfigTemplate
+                    name: {{ cluster_name }}-worker-config
+                infrastructureRef:
+                  apiGroup: infrastructure.cluster.x-k8s.io
+                  kind: VirtinkMachineTemplate
+                  name: {{ vm_name }}-template
+          ---
+          apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+          kind: KThreesConfigTemplate
+          metadata:
+            name: {{ cluster_name }}-worker-config
+            namespace: {{ cluster_namespace }}
+          spec:
+            template:
+              spec:
+                preK3sCommands:
+                  - apt-get update
+                  - apt-get install -y curl iptables
+                  # Switch to iptables-legacy: Virtink kernel (5.15.12) lacks nf_tables
+                  - "update-alternatives --set iptables /usr/sbin/iptables-legacy || true"
+                  - "update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy || true"
+                  - "update-alternatives --set iptables-save /usr/sbin/iptables-save-legacy || true"
+                  - "update-alternatives --set iptables-restore /usr/sbin/iptables-restore-legacy || true"
+                  - "sed -i '/cloud-provider/d' /etc/rancher/k3s/config.yaml || true"
+                  - "sed -i 's|server: .*|server: https://{{ server_ip }}:6443|' /etc/rancher/k3s/config.yaml || true"
+                  - "sed -i '/^kubelet-arg:$/d' /etc/rancher/k3s/config.yaml || true"
+                  - mkdir -p /etc/systemd/system
+                  - "echo 'K3S_URL=https://{{ server_ip }}:6443' > /etc/systemd/system/k3s-agent.service.env"
+                  - "echo 'K3S_TOKEN={{ k3s_server_token }}' >> /etc/systemd/system/k3s-agent.service.env"
+                  - "echo 'K3S_NODE_NAME={{ vm_name }}' >> /etc/systemd/system/k3s-agent.service.env"
+                  - "export K3S_URL=https://{{ server_ip }}:6443"
+                  - "export K3S_TOKEN={{ k3s_server_token }}"
+                agentConfig:
+                  nodeName: "{{ vm_name }}"
+
+    # -------------------------------------------------------
+    # 8. Applica il manifest
+    # -------------------------------------------------------
+    - name: Apply vm-cluster manifest
+      ansible.builtin.command: >
+        kubectl apply -f /tmp/vm-cluster.yaml
+      register: vm_apply
+      changed_when: "'created' in vm_apply.stdout"
+
+    - name: Wait for VirtinkCluster to be created
+      ansible.builtin.command: >
+        kubectl get virtinkcluster {{ cluster_name }} -n {{ cluster_namespace }}
+      register: vc_wait
+      until: vc_wait.rc == 0
+      retries: 12
+      delay: 5
+      changed_when: false
+
+    - name: Patch VirtinkCluster controlPlaneEndpoint to real server IP
+      ansible.builtin.command: >
+        kubectl patch virtinkcluster {{ cluster_name }} -n {{ cluster_namespace }}
+        --type=merge
+        -p='{"spec":{"controlPlaneEndpoint":{"host":"{{ server_ip }}","port":6443}}}'
+      changed_when: true
+      ignore_errors: true
+
+    - name: Wait for vm-cluster control plane Service to exist
+      ansible.builtin.command: >
+        kubectl get svc {{ cluster_name }} -n {{ cluster_namespace }}
+      register: svc_wait
+      until: svc_wait.rc == 0
+      retries: 12
+      delay: 5
+      changed_when: false
+
+    - name: Write Endpoints manifest for vm-cluster Service
+      ansible.builtin.copy:
+        dest: /tmp/vm-cluster-endpoints.yaml
+        mode: '0644'
+        content: |
+          apiVersion: v1
+          kind: Endpoints
+          metadata:
+            name: {{ cluster_name }}
+            namespace: {{ cluster_namespace }}
+          subsets:
+            - addresses:
+                - ip: "{{ server_ip }}"
+              ports:
+                - port: 6443
+                  protocol: TCP
+
+    - name: Apply Endpoints to route vm-cluster Service to existing k3s server
+      ansible.builtin.command: kubectl apply -f /tmp/vm-cluster-endpoints.yaml
+      changed_when: true
+
+    - name: Patch KThreesControlPlane status initialized=true
+      ansible.builtin.command: >
+        kubectl patch kthreescontrolplane {{ cluster_name }}-control-plane
+        --type=merge
+        --subresource=status
+        -p='{"status":{"initialized":true}}'
+        -n {{ cluster_namespace }}
+      changed_when: true
+
+    - name: Annotate MachineDeployment to skip preflight check
+      ansible.builtin.command: >
+        kubectl annotate machinedeployment {{ cluster_name }}-workers
+        -n {{ cluster_namespace }}
+        machineset.cluster.x-k8s.io/skip-preflight-checks=ControlPlaneIsStable
+        --overwrite
+      changed_when: true
+
+    # -------------------------------------------------------
+    # 9. Aspetta che la VM si unisca al cluster
+    # -------------------------------------------------------
+    - name: Wait for VM to be Running
+      ansible.builtin.command: kubectl get virtualmachine -A
+      register: vm_status
+      until: "'Running' in vm_status.stdout"
+      retries: 20
+      delay: 15
+      changed_when: false
+
+    - name: Show VM status
+      ansible.builtin.debug:
+        msg: "{{ vm_status.stdout }}"
+
+    - name: Wait for worker node to join cluster
+      ansible.builtin.command: kubectl get nodes
+      register: nodes_status
+      until: "vm_name in nodes_status.stdout"
+      retries: 30
+      delay: 20
+      changed_when: false
+
+    - name: Show final nodes
+      ansible.builtin.debug:
+        msg: "{{ nodes_status.stdout }}"
